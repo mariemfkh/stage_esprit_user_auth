@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import * as request from 'supertest';
+import request from 'supertest';
 import { AppModule } from './../src/app.module';
+import { RoleEnum } from './../src/users/enums/role.enum';
 
 describe('ms-auth (e2e)', () => {
   let app: INestApplication;
@@ -33,6 +34,7 @@ describe('ms-auth (e2e)', () => {
       lastName: 'User',
       email: `test.e2e.${Date.now()}@example.com`,
       password: 'Test@Password123',
+      role: RoleEnum.SUPER_ADMIN,
     };
 
     let accessToken: string;

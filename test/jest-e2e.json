@@ -14,5 +14,7 @@
     "^@common/(.*)$": "<rootDir>/../src/common/$1",
     "^@config/(.*)$": "<rootDir>/../src/config/$1",
     "^@database/(.*)$": "<rootDir>/../src/database/$1"
-  }
+  },
+  "globalSetup": "<rootDir>/setup.ts",
+  "globalTeardown": "<rootDir>/teardown.ts"
 }
