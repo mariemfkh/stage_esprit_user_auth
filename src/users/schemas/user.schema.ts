@@ -32,7 +32,7 @@ export class User {
   @Prop({ required: true })
   password!: string;
 
-  @Prop({ type: String, enum: RoleEnum, required: true })
+  @Prop({ type: String, enum: RoleEnum, default: RoleEnum.MEMBRE })
   role!: string;
 
   @Prop({ type: String })
@@ -46,6 +46,15 @@ export class User {
 
   @Prop({ default: false })
   twoFactorEnabled!: boolean;
+
+  @Prop({ type: String, default: null })
+  twoFactorSecret?: string | null;
+
+  @Prop({ type: String, default: null })
+  passwordResetToken?: string | null;
+
+  @Prop({ type: Date, default: null })
+  passwordResetExpiresAt?: Date | null;
 
   @Prop({ default: 0 })
   failedLoginAttempts!: number;

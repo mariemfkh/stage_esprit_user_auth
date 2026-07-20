@@ -17,6 +17,9 @@ import {
   RefreshToken,
   RefreshTokenDocument,
 } from './schemas/refresh-token.schema';
+import { randomBytes } from 'crypto';
+import { generateSecret, generateURI, verifySync } from 'otplib';
+import * as QRCode from 'qrcode';
 
 export interface AuthTokens {
   accessToken: string;
@@ -211,5 +214,124 @@ export class AuthService {
     ]);
 
     return { accessToken, refreshToken };
+  }
+
+  /**
+   * Forgot Password: Generate token and send email
+   */
+  async forgotPassword(email: string): Promise<void> {
+    const user = await this.usersService.findByEmail(email);
+    if (!user) {
+      // Don't reveal if user exists (security best practice)
+      return;
+    }
+
+    // Generate 32-byte hex token
+    const resetToken = randomBytes(32).toString('hex');
+    const hashedToken = await bcrypt.hash(resetToken, 10);
+
+    // Token expires in 15 minutes
+    const expiresAt = new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + 15);
+
+    // Save hashed token and expiry to user
+    await this.usersService.update(user._id.toString(), {
+      passwordResetToken: hashedToken,
+      passwordResetExpiresAt: expiresAt,
+    });
+
+    this.logger.log(`Password reset token generated for ${email}. Plain token: ${resetToken}`);
+    // TODO: Send email with resetToken (plain text) to user
+    // Email body should contain: http://frontend.com/reset-password?token=${resetToken}
+  }
+
+  /**
+   * Reset Password: Validate token and update password
+   */
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    const saltRounds = this.configService.get<number>('bcrypt.rounds', 12);
+    const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+
+    // Find user with valid reset token
+    const users = await this.usersService.findAll();
+    let validUser: UserDocument | null = null;
+
+    for (const user of users) {
+      if (user.passwordResetToken && user.passwordResetExpiresAt) {
+        const isMatch = await bcrypt.compare(token, user.passwordResetToken);
+        if (isMatch && new Date() < user.passwordResetExpiresAt) {
+          validUser = user;
+          break;
+        }
+      }
+    }
+
+    if (!validUser) {
+      throw new UnauthorizedException('Lien de réinitialisation invalide ou expiré');
+    }
+
+    // Update password and clear reset token
+    await this.usersService.update(validUser._id.toString(), {
+      password: hashedPassword,
+      passwordResetToken: null,
+      passwordResetExpiresAt: null,
+    });
+
+    this.logger.log(`Password reset for user ${validUser.email}`);
+  }
+
+  /**
+   * Generate 2FA Secret and return QR code
+   */
+  async generateTwoFactor(userId: string): Promise<{ secret: string; qrCode: string }> {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException('Utilisateur non trouvé');
+    }
+
+    const secret = generateSecret();
+    
+    // Save secret to user document
+    await this.usersService.update(userId, {
+      twoFactorSecret: secret,
+    });
+
+    const keyuri = generateURI({
+      issuer: 'CODE DESK',
+      label: user.email,
+      secret,
+    });
+
+    const qrCode = await QRCode.toDataURL(keyuri);
+
+    this.logger.log(`2FA secret generated for ${user.email}`);
+    return { secret, qrCode };
+  }
+
+  /**
+   * Validate 2FA code and enable 2FA
+   */
+  async turnOnTwoFactor(userId: string, code: string): Promise<void> {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException('Utilisateur non trouvé');
+    }
+
+    if (!user.twoFactorSecret) {
+      throw new UnauthorizedException('2FA secret not generated yet');
+    }
+
+    // Validate TOTP code
+    const isValid = verifySync({ token: code, secret: user.twoFactorSecret });
+    if (!isValid) {
+      throw new UnauthorizedException('Code 2FA invalide');
+    }
+
+    // Enable 2FA
+    await this.usersService.update(userId, {
+      twoFactorEnabled: true,
+    });
+
+    this.logger.log(`2FA enabled for user ${user.email}`);
   }
 }
